@@ -174,11 +174,11 @@ def test_labgrid_coordinator_disabled(shell: ShellDriver):
     Make sure this is the case.
     """
 
-    [state] = shell.run_check("systemctl --no-pager show labgrid-coordinator.service | grep -i UnitFileState")
-    assert state == "UnitFileState=disabled"
+    [state] = shell.run_check("systemctl show -p UnitFileState --value --no-pager labgrid-coordinator.service")
+    assert state == "disabled"
 
-    [state] = shell.run_check("systemctl --no-pager show labgrid-coordinator.service | grep -i UnitFilePreset")
-    assert state == "UnitFilePreset=disabled"
+    [state] = shell.run_check("systemctl show -p UnitFilePreset --value --no-pager labgrid-coordinator.service")
+    assert state == "disabled"
 
 
 @pytest.mark.slow
@@ -191,8 +191,8 @@ def test_labgrid_coordinator_starting(shell: ShellDriver):
     try:
         shell.run_check("systemctl --no-pager start labgrid-coordinator")
 
-        [state] = shell.run_check("systemctl --no-pager show labgrid-coordinator.service | grep ActiveState")
-        assert state == "ActiveState=active"
+        [state] = shell.run_check("systemctl show -p ActiveState --value --no-pager labgrid-coordinator.service")
+        assert state == "active"
 
         # Wait for the coordinator to bind to it's port
         for _ in range(60 // 5):

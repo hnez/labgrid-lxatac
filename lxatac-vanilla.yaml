@@ -35,7 +35,7 @@ targets:
       ptx-works-available: []
 
 images:
-  tfa: ../images/lxatac/tf-a-stm32mp157c-lxa-tac.stm32
+  tfa: ../images/lxatac/trusted-firmware-a/tf-a-stm32mp157c-lxa-tac.stm32
   mmc_boot_fip: ../images/lxatac/emmc-boot-image-lxatac.fip
   mmc_boot: ../images/lxatac/emmc-boot-image-lxatac.img
   mmc: ../images/lxatac/emmc-image-lxatac.simg

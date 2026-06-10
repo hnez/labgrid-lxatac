@@ -172,3 +172,16 @@ def test_ptx_ssh_keys(shell):
     This file is generated in our internal flavor of meta-lxatac and contains all relevant keys from our ansible.
     """
     shell.run_check('grep -q "^ssh-" /etc/ssh/authorized_keys.root')
+
+
+def test_ssh_password_login_disabled(shell, strategy):
+    """
+    Check if the sshd running on the LXA TAC offers only "publickey" as authentication method.
+
+    @relation(CySec1, scope=function)
+    """
+    auth_methods = shell.run_check(
+        "ssh -v -o PreferredAuthentications=none -o UserKnownHostsFile=/dev/null -o "
+        f"StrictHostKeyChecking=no root@{strategy.network.address} 2>&1 | grep Authentications"
+    )
+    assert "debug1: Authentications that can continue: publickey" in [x.strip() for x in auth_methods]

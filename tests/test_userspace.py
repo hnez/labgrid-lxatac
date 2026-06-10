@@ -3,6 +3,7 @@ import json
 import re
 from dataclasses import dataclass
 
+import labgrid
 import pytest
 
 
@@ -185,3 +186,27 @@ def test_ssh_password_login_disabled(shell, strategy):
         f"StrictHostKeyChecking=no root@{strategy.network.address} 2>&1 | grep Authentications"
     )
     assert "debug1: Authentications that can continue: publickey" in [x.strip() for x in auth_methods]
+
+
+def test_ssh_no_pubkeys(shell, env: labgrid.Environment, check):
+    """
+    Make sure there are no SSH pubkeys present on the device.
+    This test aims to find ssh pubkeys that have been left on the device by accident, so we only check the most likely
+    locations in the file system.
+
+    @relation(CySec2, scope=function)
+    """
+
+    if "ptx-flavor" in env.get_target_features():
+        pytest.skip(reason="Test does not make sense for non-production image with ptx-flavor.")
+
+    # Check for authorized keys for all users.
+    # This way we can later add new users and this test will automatically pick them up.
+    homes = shell.run_check("cat /etc/passwd | cut -d':' -f 6")
+    for home in homes:
+        with check:
+            shell.run_check(f"test ! -f {home}/.ssh/authorized_keys")
+
+    # Check for the authorized keys from the ptx-flavor.
+    with check:
+        shell.run_check("test ! -f /etc/ssh/authorized_keys.root")

@@ -272,3 +272,26 @@ def test_iobus_server_api(shell, strategy, check):
 
     with check:
         assert "result" in r and isinstance(r["result"], list) and not r["result"]
+
+
+def test_iobus_service_hardening(shell, check):
+    """
+    Test if the hardening options for the LXA IOBus server have been applied.
+
+    @relation(CySec8, scope=function)
+    """
+
+    def _assert_value(property_name: str, should: str) -> None:
+        value = shell.run_check(f"systemctl show -p {property_name} --value --no-pager lxa-iobus.service")
+        with check:
+            assert len(value) == 1  # len(value) == 0 would be an empty result.
+            assert value[0] == should
+
+    _assert_value("PrivateDevices", "yes")
+    _assert_value("PrivateTmp", "yes")
+    _assert_value("ProtectControlGroups", "yes")
+    _assert_value("ProtectKernelModules", "yes")
+    _assert_value("ProtectKernelTunables", "yes")
+    _assert_value("ProtectKernelLogs", "yes")
+    _assert_value("ProtectSystem", "strict")
+    _assert_value("ReadWritePaths", "/var/cache/lxa-iobus")

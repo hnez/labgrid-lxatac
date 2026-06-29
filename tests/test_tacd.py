@@ -384,3 +384,56 @@ def test_tacd_iobus_power_switchable(strategy, shell, eet, record_property, chec
     assert r.status_code == 200
     record_property("Off -> Voltage", r.json()["value"])
     assert -0.5 < r.json()["value"] < 0.5
+
+
+@pytest.fixture(scope="function")
+def tacd_configured(shell: labgrid.driver.ShellDriver):
+    """
+    Make sure the tacd is in a configured mode and restore the previous state after the test has run.
+    """
+
+    original_state_file = shell.get_bytes("/srv/tacd/state.json").decode()
+    state = json.loads(original_state_file)
+    if not state["persistent_topics"]["/v1/tac/setup_mode"]:
+        # We are already set up. Nothing to do.
+        yield
+        return
+
+    state["persistent_topics"]["/v1/tac/setup_mode"] = False
+    new_state_file = json.dumps(state)
+    shell.put_bytes(new_state_file.encode(), "/srv/tacd/state.json")
+    shell.run_check("systemctl restart tacd")
+    yield
+    shell.put_bytes(original_state_file.encode(), "/srv/tacd/state.json")
+    shell.run_check("systemctl restart tacd")
+
+
+def test_tacd_ssh_pubkeys_not_writeable_http(shell, strategy, tacd_configured):
+    """
+    Make sure we can not get or set the authorized_keys using the HTTP API in the tacd.
+
+    @relation(CySec4, scope=function)
+    """
+    # Make sure setup mode is disabled
+    r = requests.get(f"http://{strategy.network.address}/v1/tac/setup_mode")
+    assert r.status_code == 200
+    assert r.text == "false"
+
+    # We should not be able to retrieve SSH keys outside of setup mode
+    r = requests.get(f"http://{strategy.network.address}/v1/tac/ssh/authorized_keys")
+    assert r.status_code == 403
+    assert r.text == "This file may only be read in setup mode"
+
+    magic_string = "NO_SSH_KEY"
+    # Make sure the authorized_keys isn't accidentally already set to our magic string
+    with contextlib.suppress(labgrid.driver.shelldriver.ExecutionError):
+        assert shell.get_bytes("/root/.ssh/authorized_keys").decode() != magic_string
+
+    # We should not be able to PUT SSH keys outside of setup mode
+    r = requests.put(f"http://{strategy.network.address}/v1/tac/ssh/authorized_keys", data=magic_string)
+    assert r.status_code == 403
+    assert r.text == "This file may only be written in setup mode"
+
+    # Make sure the authorized_keys has not been written even if the HTTP status message tells otherwise
+    with contextlib.suppress(labgrid.driver.shelldriver.ExecutionError):
+        assert shell.get_bytes("/root/.ssh/authorized_keys").decode() != magic_string

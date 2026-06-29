@@ -1,8 +1,14 @@
+import contextlib
 import json
 import time
+from collections.abc import Callable, Generator
+from typing import Any
 
+import labgrid.driver
+import paho.mqtt.client as mqtt
 import pytest
 import requests
+from labgrid.util import Timeout
 
 
 def test_tacd_http_temperature(strategy, shell):
@@ -433,6 +439,69 @@ def test_tacd_ssh_pubkeys_not_writeable_http(shell, strategy, tacd_configured):
     r = requests.put(f"http://{strategy.network.address}/v1/tac/ssh/authorized_keys", data=magic_string)
     assert r.status_code == 403
     assert r.text == "This file may only be written in setup mode"
+
+    # Make sure the authorized_keys has not been written even if the HTTP status message tells otherwise
+    with contextlib.suppress(labgrid.driver.shelldriver.ExecutionError):
+        assert shell.get_bytes("/root/.ssh/authorized_keys").decode() != magic_string
+
+
+@pytest.fixture(scope="function")
+def ws_mqtt(strategy) -> Generator[tuple[mqtt.Client, dict[Any, Any], Callable[..., str]], Any, None]:
+    """
+    Sets up a threaded paho-mqtt client that is connected to the websocket-mqtt endpoint of the tacd.
+
+    Since paho-mqtt is event-driven by design and this does not go very well with linear tests this fixture also
+    provides a wrapper around  paho-mqtt that allows a test to retrieve the last value of each topic.
+    """
+    last_values = dict()
+
+    def _on_message(client, userdata, msg):
+        last_values[msg.topic] = msg.payload.decode()
+
+    def get_value(topic: str) -> str:
+        t = Timeout(timeout=1.0)
+        while not t.expired:
+            if topic in last_values:
+                return last_values.pop(topic)
+            time.sleep(0.1)
+        else:
+            raise TimeoutError("Topic not found until timeout")
+
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, transport="websockets")
+    client.on_message = _on_message
+    client.ws_set_options(path="/v1/mqtt")
+    client.connect(f"{strategy.network.address}", 80)
+    client.loop_start()
+    connect_timeout = Timeout(timeout=5.0)
+    while not connect_timeout.expired:
+        if client.is_connected():
+            break
+        time.sleep(0.1)
+    else:
+        raise ConnectionError("Could not connect to tacd mqtt-ws in time!")
+    yield client, last_values, get_value
+    client.disconnect()
+
+
+def test_tacd_ssh_pubkeys_not_writeable_ws(shell, tacd_configured, ws_mqtt):
+    """
+    Make sure we can not set the authorized_keys using the Websocket in the tacd.
+
+    @relation(CySec4, scope=function)
+    """
+    client, last_values, get_value = ws_mqtt
+
+    # Make sure setup mode is disabled
+    client.subscribe("/v1/tac/setup_mode")
+    assert get_value("/v1/tac/setup_mode") == "false"
+
+    magic_string = "NO_SSH_KEY"
+    # Make sure the authorized_keys isn't accidentally already set to our magic string
+    with contextlib.suppress(labgrid.driver.shelldriver.ExecutionError):
+        assert shell.get_bytes("/root/.ssh/authorized_keys").decode() != magic_string
+
+    # We should not be able to PUT SSH keys outside of setup mode
+    client.publish("/v1/tac/ssh/authorized_keys", magic_string, qos=0, retain=True)
 
     # Make sure the authorized_keys has not been written even if the HTTP status message tells otherwise
     with contextlib.suppress(labgrid.driver.shelldriver.ExecutionError):

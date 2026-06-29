@@ -3,3 +3,4 @@
 
 pytest-check
 pytest-dependency
+paho-mqtt

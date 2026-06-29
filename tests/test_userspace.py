@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import labgrid
 import pytest
+import requests
 
 
 def test_chrony(shell):
@@ -210,3 +211,64 @@ def test_ssh_no_pubkeys(shell, env: labgrid.Environment, check):
     # Check for the authorized keys from the ptx-flavor.
     with check:
         shell.run_check("test ! -f /etc/ssh/authorized_keys.root")
+
+
+def test_iobus_website(shell, strategy):
+    """
+    Test if the LXA IOBus server serves it's website.
+    """
+    r = requests.get(f"http://{strategy.network.address}:8080")
+    assert r.status_code == 200
+    assert "<title>LXA IOBus Server</title>" in r.text
+
+
+def test_iobus_server_state(shell, strategy, check):
+    """
+    Test if the LXA IOBus server reports a useful state.
+
+    In the test fixture there is no LXA IOBus node connected to the LXA TAC.
+    Thus can_tx_state will be "error" - but everything else should look normal.
+    """
+    r = requests.get(f"http://{strategy.network.address}:8080/server-info/")
+    assert r.status_code == 200
+
+    state = json.loads(r.text)
+
+    [hostname] = shell.run_check("hostname")
+
+    with check:
+        assert "hostname" in state and state["hostname"] == hostname
+
+    with check:
+        assert "can_interface" in state and state["can_interface"] == "can0_iobus"
+
+    with check:
+        assert "can_interface_is_up" in state and state["can_interface_is_up"]
+
+    with check:
+        assert "lss_state" in state and state["lss_state"] == "Idle"
+
+    with check:
+        assert "can_tx_error" in state and isinstance(state["can_tx_error"], bool)
+
+
+def test_iobus_server_api(shell, strategy, check):
+    """
+    Test if the LXA IOBus server reports a useful node list.
+
+    Since the testbed does not have an IOBus node connected we can only check, if the server actually reports an
+    empty node list.
+    """
+    r = requests.get(f"http://{strategy.network.address}:8080/nodes/")
+    assert r.status_code == 200
+
+    r = json.loads(r.text)
+
+    with check:
+        assert "code" in r and r["code"] == 0
+
+    with check:
+        assert "error_message" in r and r["error_message"] == ""
+
+    with check:
+        assert "result" in r and isinstance(r["result"], list) and not r["result"]

@@ -506,3 +506,47 @@ def test_tacd_ssh_pubkeys_not_writeable_ws(shell, tacd_configured, ws_mqtt):
     # Make sure the authorized_keys has not been written even if the HTTP status message tells otherwise
     with contextlib.suppress(labgrid.driver.shelldriver.ExecutionError):
         assert shell.get_bytes("/root/.ssh/authorized_keys").decode() != magic_string
+
+
+def test_tacd_no_setup_mode_http(shell, strategy, tacd_configured):
+    """
+    Make sure we can not enter setup mode via the HTTP API.
+
+    @relation(CySec5, scope=function)
+    """
+
+    # Make sure setup mode is disabled
+    r = requests.get(f"http://{strategy.network.address}/v1/tac/setup_mode")
+    assert r.status_code == 200
+    assert r.text == "false"
+
+    # Try to activate config mode
+    r = requests.put(f"http://{strategy.network.address}/v1/tac/setup_mode", data="true")
+    assert r.status_code == 204
+
+    # Make sure setup mode is still disabled
+    r = requests.get(f"http://{strategy.network.address}/v1/tac/setup_mode")
+    assert r.status_code == 200
+    assert r.text == "false"
+
+
+def test_tacd_no_setup_mode_ws(shell, strategy, tacd_configured, ws_mqtt):
+    """
+    Make sure we can not enter setup mode via the Websocket API.
+
+    @relation(CySec5, scope=function)
+    """
+    client, last_values, get_value = ws_mqtt
+
+    # Make sure setup mode is disabled
+    r = requests.get(f"http://{strategy.network.address}/v1/tac/setup_mode")
+    assert r.status_code == 200
+    assert r.text == "false"
+
+    # Try to activate config mode
+    client.publish("/v1/tac/setup_mode", "true", qos=0, retain=True)
+
+    # Make sure setup mode is still disabled
+    r = requests.get(f"http://{strategy.network.address}/v1/tac/setup_mode")
+    assert r.status_code == 200
+    assert r.text == "false"

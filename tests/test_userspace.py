@@ -3,7 +3,9 @@ import json
 import re
 from dataclasses import dataclass
 
+import labgrid
 import pytest
+import requests
 
 
 def test_chrony(shell):
@@ -172,3 +174,124 @@ def test_ptx_ssh_keys(shell):
     This file is generated in our internal flavor of meta-lxatac and contains all relevant keys from our ansible.
     """
     shell.run_check('grep -q "^ssh-" /etc/ssh/authorized_keys.root')
+
+
+def test_ssh_password_login_disabled(shell, strategy):
+    """
+    Check if the sshd running on the LXA TAC offers only "publickey" as authentication method.
+
+    @relation(CySec1, scope=function)
+    """
+    auth_methods = shell.run_check(
+        "ssh -v -o PreferredAuthentications=none -o UserKnownHostsFile=/dev/null -o "
+        f"StrictHostKeyChecking=no root@{strategy.network.address} 2>&1 | grep Authentications"
+    )
+    assert "debug1: Authentications that can continue: publickey" in [x.strip() for x in auth_methods]
+
+
+def test_ssh_no_pubkeys(shell, env: labgrid.Environment, check):
+    """
+    Make sure there are no SSH pubkeys present on the device.
+    This test aims to find ssh pubkeys that have been left on the device by accident, so we only check the most likely
+    locations in the file system.
+
+    @relation(CySec2, scope=function)
+    """
+
+    if "ptx-flavor" in env.get_target_features():
+        pytest.skip(reason="Test does not make sense for non-production image with ptx-flavor.")
+
+    # Check for authorized keys for all users.
+    # This way we can later add new users and this test will automatically pick them up.
+    homes = shell.run_check("cat /etc/passwd | cut -d':' -f 6")
+    for home in homes:
+        with check:
+            shell.run_check(f"test ! -f {home}/.ssh/authorized_keys")
+
+    # Check for the authorized keys from the ptx-flavor.
+    with check:
+        shell.run_check("test ! -f /etc/ssh/authorized_keys.root")
+
+
+def test_iobus_website(shell, strategy):
+    """
+    Test if the LXA IOBus server serves it's website.
+    """
+    r = requests.get(f"http://{strategy.network.address}:8080")
+    assert r.status_code == 200
+    assert "<title>LXA IOBus Server</title>" in r.text
+
+
+def test_iobus_server_state(shell, strategy, check):
+    """
+    Test if the LXA IOBus server reports a useful state.
+
+    In the test fixture there is no LXA IOBus node connected to the LXA TAC.
+    Thus can_tx_state will be "error" - but everything else should look normal.
+    """
+    r = requests.get(f"http://{strategy.network.address}:8080/server-info/")
+    assert r.status_code == 200
+
+    state = json.loads(r.text)
+
+    [hostname] = shell.run_check("hostname")
+
+    with check:
+        assert "hostname" in state and state["hostname"] == hostname
+
+    with check:
+        assert "can_interface" in state and state["can_interface"] == "can0_iobus"
+
+    with check:
+        assert "can_interface_is_up" in state and state["can_interface_is_up"]
+
+    with check:
+        assert "lss_state" in state and state["lss_state"] == "Idle"
+
+    with check:
+        assert "can_tx_error" in state and isinstance(state["can_tx_error"], bool)
+
+
+def test_iobus_server_api(shell, strategy, check):
+    """
+    Test if the LXA IOBus server reports a useful node list.
+
+    Since the testbed does not have an IOBus node connected we can only check, if the server actually reports an
+    empty node list.
+    """
+    r = requests.get(f"http://{strategy.network.address}:8080/nodes/")
+    assert r.status_code == 200
+
+    r = json.loads(r.text)
+
+    with check:
+        assert "code" in r and r["code"] == 0
+
+    with check:
+        assert "error_message" in r and r["error_message"] == ""
+
+    with check:
+        assert "result" in r and isinstance(r["result"], list) and not r["result"]
+
+
+def test_iobus_service_hardening(shell, check):
+    """
+    Test if the hardening options for the LXA IOBus server have been applied.
+
+    @relation(CySec8, scope=function)
+    """
+
+    def _assert_value(property_name: str, should: str) -> None:
+        value = shell.run_check(f"systemctl show -p {property_name} --value --no-pager lxa-iobus.service")
+        with check:
+            assert len(value) == 1  # len(value) == 0 would be an empty result.
+            assert value[0] == should
+
+    _assert_value("PrivateDevices", "yes")
+    _assert_value("PrivateTmp", "yes")
+    _assert_value("ProtectControlGroups", "yes")
+    _assert_value("ProtectKernelModules", "yes")
+    _assert_value("ProtectKernelTunables", "yes")
+    _assert_value("ProtectKernelLogs", "yes")
+    _assert_value("ProtectSystem", "strict")
+    _assert_value("ReadWritePaths", "/var/cache/lxa-iobus")

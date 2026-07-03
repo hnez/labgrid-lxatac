@@ -393,25 +393,36 @@ def test_tacd_iobus_power_switchable(strategy, shell, eet, record_property, chec
 
 
 @pytest.fixture(scope="function")
-def tacd_configured(shell: labgrid.driver.ShellDriver):
+def tacd_configured(strategy, shell: labgrid.driver.ShellDriver):
     """
     Make sure the tacd is in a configured mode and restore the previous state after the test has run.
     """
 
-    original_state_file = shell.get_bytes("/srv/tacd/state.json").decode()
-    state = json.loads(original_state_file)
-    if not state["persistent_topics"]["/v1/tac/setup_mode"]:
+    r = requests.get(f"http://{strategy.network.address}/v1/tac/setup_mode")
+    assert r.status_code == 200
+
+    if r.text == "false":
         # We are already set up. Nothing to do.
         yield
         return
 
-    state["persistent_topics"]["/v1/tac/setup_mode"] = False
-    new_state_file = json.dumps(state)
-    shell.put_bytes(new_state_file.encode(), "/srv/tacd/state.json")
-    shell.run_check("systemctl restart tacd")
+    # Create backup of the state file. This may fail if no state file was written yet.
+    # The tacd only writes the state file when a persistent topic is actively changed.
+    # So if everything is still at the defaults, there will be no file.
+    # Silently ignore the error in this case.
+    shell.run("cp /srv/tacd/state.json /srv/tacd/state.json.bkp")
+
+    # Leave setup mode (this is possible via the API, while the inverse is not)
+    r = requests.put(f"http://{strategy.network.address}/v1/tac/setup_mode", data=b"false")
+    assert r.status_code == 204
+
     yield
-    shell.put_bytes(original_state_file.encode(), "/srv/tacd/state.json")
-    shell.run_check("systemctl restart tacd")
+
+    # Delete the state file and replace it with the backed up one (if one was created above).
+    shell.run_check("systemctl stop tacd")
+    shell.run_check("rm /srv/tacd/state.json")
+    shell.run("mv /srv/tacd/state.json.bkp /srv/tacd/state.json")
+    shell.run_check("systemctl start tacd")
 
 
 def test_tacd_ssh_pubkeys_not_writeable_http(shell, strategy, tacd_configured):

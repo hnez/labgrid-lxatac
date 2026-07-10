@@ -429,7 +429,7 @@ def test_tacd_ssh_pubkeys_not_writeable_http(shell, strategy, tacd_configured):
     """
     Make sure we can not get or set the authorized_keys using the HTTP API in the tacd.
 
-    @relation(CySec4, scope=function)
+    @relation(CYSEC-4, scope=function)
     """
     # Make sure setup mode is disabled
     r = requests.get(f"http://{strategy.network.address}/v1/tac/setup_mode")
@@ -498,7 +498,7 @@ def test_tacd_ssh_pubkeys_not_writeable_ws(shell, tacd_configured, ws_mqtt):
     """
     Make sure we can not set the authorized_keys using the Websocket in the tacd.
 
-    @relation(CySec4, scope=function)
+    @relation(CYSEC-4, scope=function)
     """
     client, last_values, get_value = ws_mqtt
 
@@ -523,7 +523,7 @@ def test_tacd_no_setup_mode_http(shell, strategy, tacd_configured):
     """
     Make sure we can not enter setup mode via the HTTP API.
 
-    @relation(CySec5, scope=function)
+    @relation(CYSEC-5, scope=function)
     """
 
     # Make sure setup mode is disabled
@@ -545,7 +545,7 @@ def test_tacd_no_setup_mode_ws(shell, strategy, tacd_configured, ws_mqtt):
     """
     Make sure we can not enter setup mode via the Websocket API.
 
-    @relation(CySec5, scope=function)
+    @relation(CYSEC-5, scope=function)
     """
     client, last_values, get_value = ws_mqtt
 

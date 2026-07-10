@@ -180,7 +180,7 @@ def test_ssh_password_login_disabled(shell, strategy):
     """
     Check if the sshd running on the LXA TAC offers only "publickey" as authentication method.
 
-    @relation(CySec1, scope=function)
+    @relation(CYSEC-1, scope=function)
     """
     auth_methods = shell.run_check(
         "ssh -v -o PreferredAuthentications=none -o UserKnownHostsFile=/dev/null -o "
@@ -195,7 +195,7 @@ def test_ssh_no_pubkeys(shell, env: labgrid.Environment, check):
     This test aims to find ssh pubkeys that have been left on the device by accident, so we only check the most likely
     locations in the file system.
 
-    @relation(CySec2, scope=function)
+    @relation(CYSEC-2, scope=function)
     """
 
     if "ptx-flavor" in env.get_target_features():
@@ -278,7 +278,7 @@ def test_iobus_service_hardening(shell, check):
     """
     Test if the hardening options for the LXA IOBus server have been applied.
 
-    @relation(CySec8, scope=function)
+    @relation(CYSEC-8, scope=function)
     """
 
     def _assert_value(property_name: str, should: str) -> None:
